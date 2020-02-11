@@ -31,7 +31,7 @@ void clause_print(Clause *c){
     printf("Clause:%p\n-Litreals:",c);
     for(sint i=0;i<c->ori_length;i++){
         Literal l = c->ls[i];
-        printf("%c%d%c ",IS_NEG(l) ? '-' : ' ',ID(l),IS_DELETED(l)? 'X' : ' ');
+        printf("%d%c ",TO_INT(l),IS_DELETED(l)? 'X' : ' ');
     }
     putchar('\n');
 }

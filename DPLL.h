@@ -6,8 +6,9 @@
 Literal* DPLL(Formula *fu);
 
 typedef struct del_clause{
-    sint id;
-    Clause *c;
+    int pre;
+    int id;
+    int next;
 } del_clause;
 
 typedef struct del_literal{
@@ -21,7 +22,7 @@ typedef struct step {
     sint dls_top;
     sint ls_cnt;
     sint tag;
-} Step;
+} step;
 
 typedef struct unitary_clause {
     Clause *c;
@@ -29,14 +30,14 @@ typedef struct unitary_clause {
     Literal l;
 } unitary_clause;
 
-typedef struct step_stack {
+typedef struct recoder {
     del_clause *dcs_base;
     sint dcs_top;
 
     del_literal *dls_base;
     sint dls_top;
 
-    Step *step_base;
+    step *step_base;
     sint step_top;
 
     unitary_clause *ucs_base;
@@ -44,6 +45,26 @@ typedef struct step_stack {
 
     Literal *ls;
     sint ls_cnt;
-} Step_stack;
+} Recoder;
+
+typedef struct literal_info
+{
+    sint related_clause_cnt;
+    sint cap;
+    sint related_clauses[];
+} Lit_info;
+
+typedef struct info_buff
+{
+    sint clauses_length3_cnt;
+    sint clauses_length2_cnt;
+    Clause** clauses_length3;
+    Clause** clauses_length2;
+    sint cnt;
+    sint *p1;
+    sint *p2;
+    sint *h;
+} Info_buff;
+
 
 #endif
