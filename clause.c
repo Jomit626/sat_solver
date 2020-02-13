@@ -16,7 +16,7 @@ void clause_free(Clause* c){
 
 // remove a literal in a clause
 void clause_remove(Clause* c, Literal l){
-    l = REMOVE_DEL(l);
+    l = LIT_REMOVE_DEL_BIT(l);
 
     for(sint i=0;i<c->ori_length;i++){
         if(c->ls[i] == l){
@@ -31,7 +31,7 @@ void clause_print(Clause *c){
     printf("Clause:%p\n-Litreals:",c);
     for(sint i=0;i<c->ori_length;i++){
         Literal l = c->ls[i];
-        printf("%d%c ",TO_INT(l),IS_DELETED(l)? 'X' : ' ');
+        printf("%d%c ",LIT_TO_INT(l),IS_DELETED(l)? 'X' : ' ');
     }
     putchar('\n');
 }

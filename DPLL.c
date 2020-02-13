@@ -3,15 +3,12 @@
 #include <string.h>
 #include <ctype.h>
 
-#include <assert.h>
-
 #include "DPLL.h"
 
 #define NORMAL_TAG 0
 #define NEG_TAG 1
 
-
-Recoder *new_step_stack(Formula *fu)
+Recoder *new_recoder(Formula *fu)
 {
     Recoder *rec = malloc(sizeof(Recoder));
     rec->dcs_base = malloc(sizeof(del_clause) * (fu->clause_cnt + 1));
@@ -32,19 +29,42 @@ Recoder *new_step_stack(Formula *fu)
     return rec;
 }
 
-static inline void formula_remove_clause(Formula *fu, Recoder *rec, int id, int pre, int next)
-{
-    //printf("remove %d\n",id);
-    del_clause *dc = &rec->dcs_base[rec->dcs_top++];
-    dc->pre = pre;
-    dc->id = id;
-    dc->next = next;
-
-    fu->removed[id] = 1;
-    if(pre>=0)fu->next[pre] = next;
-    else fu->first = next;
+void recoder_free(Recoder *rec){
+    while(rec->dcs_top--){
+        del_clause* dc = &rec->dcs_base[rec->dcs_top];
+        free(dc->c);
+    }
+    free(rec->dcs_base);
+    free(rec->dls_base);
+    free(rec->step_base);
+    free(rec->ucs_base);
+    free(rec->ls);
+    free(rec);
 }
 
+static inline void formula_remove_clause(Formula *fu, Recoder *rec, int id, Clause *c)
+{
+    del_clause *dc = &rec->dcs_base[rec->dcs_top++];
+    dc->id = id;
+    dc->c = c;
+
+    fu->cs[id] = NULL;
+    if(id == fu->first_cluase && id == fu->clause_end - 1){
+        fu->first_cluase = fu->clause_end;
+    }else if(id == fu->first_cluase){
+        for(int i=id;i<fu->clause_end;i++)
+            if(fu->cs[i]){
+                fu->first_cluase = i;
+                break;
+            }
+    }else if(id == fu->clause_end - 1){
+        for(int i=id-1;i>fu->first_cluase;i--)
+            if(fu->cs[i]){
+                fu->clause_end = i + 1;
+                break;
+            }
+    }
+}
 static inline void clause_remove_literal(Formula *fu, Recoder *rec, Clause *c, Literal l, sint literal_id)
 {
     del_literal *dl = &rec->dls_base[rec->dls_top++];
@@ -53,11 +73,9 @@ static inline void clause_remove_literal(Formula *fu, Recoder *rec, Clause *c, L
 
     c->ls[literal_id] = l | DEL_MASK;
     c->length--;
-
-    return;
 }
 
-static inline void reocde_unitary_clause(Formula *fu, Recoder *rec, Clause *c, sint clause_id)
+static inline void recode_unitary_clause(Formula *fu, Recoder *rec, Clause *c, sint clause_id)
 {
     unitary_clause *uc = &rec->ucs_base[rec->ucs_top++];
     uc->id = clause_id;
@@ -71,19 +89,18 @@ static inline void reocde_unitary_clause(Formula *fu, Recoder *rec, Clause *c, s
         }
 }
 
-static inline void formula_remove_literal(Formula *fu, Recoder *rec, register Literal l)
+void formula_remove_literal(Formula *fu, Recoder *rec, register Literal l)
 {
-    register Literal nl = NEG(l);
+    register Literal nl = LIT_NEG(l);
 
-    Loop_Clauses_in_Formula(c,fu,i,pre,next)
+    Loop_Clauses_in_Formula(c,fu,i)
     {
         Loop_Literals_in_Clause(l1,c,j)
         {
             if (l1 == l)
             {
                 // remove this clause
-                formula_remove_clause(fu, rec, i, pre,next);
-                i = pre;
+                formula_remove_clause(fu, rec, i, c);
                 break;
             }
             else if (l1 == nl)
@@ -92,7 +109,7 @@ static inline void formula_remove_literal(Formula *fu, Recoder *rec, register Li
                 clause_remove_literal(fu, rec, c, l1, j);
 
                 if (c->length == 1)
-                    reocde_unitary_clause(fu, rec, c, i);
+                    recode_unitary_clause(fu, rec, c, i);
                 else if(c->length == 0)
                     break;// TODO:
                 break;
@@ -105,9 +122,10 @@ static inline void env_result_add(Formula *fu, Recoder *rec, Literal l)
 {
     for (sint i = 0; i < rec->ls_cnt; i++)
     {
-        if (VAR_ID(rec->ls[i]) == VAR_ID(l))
+        if (LIT_to_VAR(rec->ls[i]) == LIT_to_VAR(l))
             return;
     }
+
     rec->ls[rec->ls_cnt++] = l;
 }
 static inline void recoder_push(Formula *fu, Recoder *rec, Literal l, sint tag)
@@ -125,16 +143,20 @@ static inline void recoder_push(Formula *fu, Recoder *rec, Literal l, sint tag)
 }
 static inline void formula_recover_deleted_clause(Formula *fu, Recoder *rec, del_clause *dc)
 {
-    int pre = dc->pre,id = dc->id, next = dc->next;
-    //printf("add %d\n",id);
-    fu->removed[id] = 0;
-    
-    if(pre>=0)fu->next[pre] = id;
-    else fu->first = id;
+    int id = dc->id;
+    Clause *c = dc->c;
+
+    fu->cs[id] = c;
+    if(id < fu->first_cluase){
+        fu->first_cluase = id;
+    }
+    if(id >= fu->clause_end){
+        fu->clause_end = id + 1;
+    }
 }
 static inline void formula_recover_deleted_literal(Formula *fu, Recoder *rec, del_literal *dl)
 {
-    *dl->l = REMOVE_DEL(*dl->l);
+    *dl->l = LIT_REMOVE_DEL_BIT(*dl->l);
     dl->c->length++;
 }
 static inline Literal recoder_pop(Formula *fu, Recoder *rec)
@@ -171,20 +193,29 @@ Info_buff *new_info_buff(Formula *fu)
     buff->clauses_length3_cnt = 0;
     buff->clauses_length3 = malloc(sizeof(Clause*) * fu->clause_cnt);
 
-    buff->cnt = sizeof(sint) * fu->literal_cnt * 2;
-    buff->p1 = malloc(buff->cnt);
-    buff->p2 = malloc(buff->cnt);
+    buff->cnt = sizeof(sint) * ((fu->literal_cnt + 1) * 2 + 1);
+    buff->p = malloc(buff->cnt);
     buff->h = malloc(buff->cnt);
 
     return buff;
 }
+
+static inline void info_buff_free(Info_buff *buff){
+    free(buff->clauses_length2);
+    free(buff->clauses_length3);
+    free(buff->p);
+    free(buff->h);
+
+    free(buff);
+}
+
 static inline void info_buff_reset(Info_buff *buff){
     buff->clauses_length2_cnt = 0;
     buff->clauses_length3_cnt = 0;
 }
-static inline Literal formula_select_key_literal(Formula *fu, Info_buff *buff)
+Literal formula_select_key_literal(Formula *fu, Info_buff *buff)
 {
-    sint *p = buff->p1;
+    sint *p = buff->p;
     sint *h = buff->h;
     memset(p,0x0,buff->cnt);
     memset(h,0x0,buff->cnt);
@@ -196,13 +227,13 @@ static inline Literal formula_select_key_literal(Formula *fu, Info_buff *buff)
     {
         Clause *c = clause3[i];
         Loop_Literals_in_Clause(l, c, j)
-            p[ID(l)] += 1;
+            p[LIT_ID(l)] += 1;
     }
     for(sint i=0;i<buff->clauses_length2_cnt;i++)
     {
         Clause *c = clause2[i];
         Loop_Literals_in_Clause(l, c, j)
-            p[ID(l)] += 2;
+            p[LIT_ID(l)] += 2;
     }
 
     Literal ls[3];
@@ -213,40 +244,40 @@ static inline Literal formula_select_key_literal(Formula *fu, Info_buff *buff)
         sint ln = 0;
         Clause *c = clause3[i];
         Loop_Literals_in_Clause(l, c, j)
-        {
-            ls[ln++] = ID(l);
-        }
-        register Literal l0 = ls[0],l1 = ls[1],l2 = ls[2];
-        h[l0] += p[NEG_ID(l1)] * p[NEG_ID(l2)];
-        h[l1] += p[NEG_ID(l0)] * p[NEG_ID(l2)];
-        h[l2] += p[NEG_ID(l0)] * p[NEG_ID(l1)];
-        if(h[l0] > max_h){
+            ls[ln++] = l;
+        Literal l0 = ls[0],l1 = ls[1],l2 = ls[2];
+        Literal nl0 = LIT_NEG(l0), nl1 = LIT_NEG(l1), nl2 = LIT_NEG(l2);
+        h[LIT_ID(l0)] += p[LIT_ID(nl1)] * p[LIT_ID(nl2)];
+        h[LIT_ID(l1)] += p[LIT_ID(nl0)] * p[LIT_ID(nl2)];
+        h[LIT_ID(l2)] += p[LIT_ID(nl0)] * p[LIT_ID(nl1)];
+        if(h[LIT_ID(l0)] > max_h){
             key = l0;
-            max_h = h[l0];
+            max_h = h[LIT_ID(l0)];
         }
-        if(h[l1] > max_h){
+        if(h[LIT_ID(l1)] > max_h){
             key = l1;
-            max_h = h[l1];
+            max_h = h[LIT_ID(l1)];
         }
-        if(h[l2] > max_h){
+        if(h[LIT_ID(l2)] > max_h){
             key = l2;
-            max_h = h[l2];
+            max_h = h[LIT_ID(l2)];
         }
     }
-    return FROM_ID(key);
+    return key;
 }
-
+static inline int formula_empty(Formula *fu){
+    return fu->first_cluase == fu->clause_end;
+}
 static inline Literal formula_choose_literal(Formula *fu, Info_buff *buff)
 {
+    if(formula_empty(fu))
+        return SUCCESS_LITERAL;
     // choose the first literal
     // and check other things
     Literal l = 0;
-    sint clause_cnt = 0;
     info_buff_reset(buff);
-    //printf("Loop:");
-    Loop_Clauses_in_Formula(c, fu, i,pre,next)
+    Loop_Clauses_in_Formula(c, fu, i)
     {
-        //printf("%d ",i);
         if (c->length == 0){
             return ERROR_LITERAL;
         } else if(c->length == 3){
@@ -262,26 +293,30 @@ static inline Literal formula_choose_literal(Formula *fu, Info_buff *buff)
                     break;
             }
         }
-        clause_cnt++;
     }
-    //putchar('\n');
-    if(clause_cnt == 0)
-        return SUCCESS_LITERAL;
-    if(0){
+    if(buff->clauses_length3_cnt){
+    //if(0){    
         Literal key = formula_select_key_literal(fu,buff);
         if(key != NULL_LITERAL){
-            //printf("Key %d\n",TO_INT(key));
             l = key;
         }
     }
-    //printf("choose func:%d\n",TO_INT(l));
     return l;
+}
+static inline Literal* recoder_form_result(Recoder *rec){
+    int n = rec->ls_cnt;
+    Literal* res = malloc(sizeof(Literal) * (n + 1));
+
+    memcpy(res,rec->ls,sizeof(Literal) * n);
+    res[n] = NULL_LITERAL;
+    
+    return res;
 }
 
 Literal *DPLL(Formula *fu)
 {
     fu = formula_copy(fu);
-    Recoder *rec = new_step_stack(fu);
+    Recoder *rec = new_recoder(fu);
     Info_buff *buff = new_info_buff(fu);
     recoder_push(fu, rec, NULL_LITERAL, NORMAL_TAG);
 
@@ -292,9 +327,12 @@ Literal *DPLL(Formula *fu)
     {
         if (l == SUCCESS_LITERAL)
         {
-            formula_free(fu); // TODO:
-            rec->ls[rec->ls_cnt] = NULL_LITERAL;
-            return rec->ls;
+            formula_free(fu);
+            info_buff_free(buff);
+            
+            Literal *res = recoder_form_result(rec);
+            recoder_free(rec);
+            return res;
         }
         else if (l == ERROR_LITERAL)
         {
@@ -309,7 +347,7 @@ Literal *DPLL(Formula *fu)
             tag = NORMAL_TAG;
         }
         recoder_push(fu, rec, l, tag);
-        l = (tag == NEG_TAG) ? NEG(l) : l;
+        l = (tag == NEG_TAG) ? LIT_NEG(l) : l;
         env_result_add(fu, rec, l);
         formula_remove_literal(fu, rec, l);
 
@@ -318,7 +356,7 @@ Literal *DPLL(Formula *fu)
         {
             unitary_clause *uc = &rec->ucs_base[--rec->ucs_top];
 
-            if (!fu->removed[uc->id]) // if the clause is still in the formula
+            if (!fu->cs[uc->id]) // if the clause is still in the formula
                 continue;
 
             Literal l = uc->l;
@@ -330,15 +368,5 @@ Literal *DPLL(Formula *fu)
     return NULL;
 }
 void test(){
-    Formula *fu = new_formula_from_file("tests/func_test");
-    Recoder *rec = new_step_stack(fu);
-    recoder_push(fu, rec, 0, 0);
-    formula_print(fu);
-    formula_remove_clause(fu,rec,0,-1,1);
-    formula_remove_clause(fu,rec,1,-1,-1);
-    puts("..................");
-    formula_print(fu);
-    recoder_pop(fu,rec);
-    puts("..................");
-    formula_print(fu);
+
 }

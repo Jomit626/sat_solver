@@ -6,9 +6,8 @@
 Literal* DPLL(Formula *fu);
 
 typedef struct del_clause{
-    int pre;
     int id;
-    int next;
+    Clause *c;
 } del_clause;
 
 typedef struct del_literal{
@@ -61,8 +60,7 @@ typedef struct info_buff
     Clause** clauses_length3;
     Clause** clauses_length2;
     sint cnt;
-    sint *p1;
-    sint *p2;
+    sint *p;
     sint *h;
 } Info_buff;
 

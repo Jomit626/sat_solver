@@ -16,21 +16,15 @@ Formula *new_formula(sint type, sint ln, sint cn)
     fn->clause_cnt = cn;
 
     fn->cs = (Clause **)malloc(sizeof(Clause *) * cn);
-    fn->first = 0;
-    fn->next = (int *)malloc(sizeof(int)*cn);
-    fn->removed = (int *)malloc(sizeof(int)*cn);
-    for(int i=0;i<cn;i++){
-        fn->next[i] = i+1;
-        fn->removed[i] = 0;
-    }
-    fn->next[cn-1] = -1;
+    fn->first_cluase = 0;
+    fn->clause_end = cn;
     return fn;
 }
 
 void formula_print(Formula *fu)
 {
     printf("Formula:%p Type:%d Literal:%d Clause:%d\n", fu, fu->type, fu->literal_cnt, fu->clause_cnt);
-    Loop_Clauses_in_Formula(c, fu, i,pre,next)
+    Loop_Clauses_in_Formula(c, fu, i)
     {
         printf("%d-",i);
         clause_print(c);
@@ -45,8 +39,9 @@ static Literal lb[2048];
 static Literal get_literal(char *s, sint *start)
 {
     char *st = s;
+    Variable var = 0;
+    sint neg = 0;
     s = s + *start;
-    sint neg = 0, num = 0;
 
     while (isblank(*s))
         s++;
@@ -56,18 +51,19 @@ static Literal get_literal(char *s, sint *start)
 
     while (isdigit(*s))
     {
-        num *= 10;
-        num += *s - '0';
+        var *= 10;
+        var += *s - '0';
         s++;
     }
-    num = FROM_INT(num);
     *start = s - st;
-    return neg ? NEG(num) : num;
+    return VAR_to_LIT(var,neg);
 }
 
 Formula *new_formula_from_file(const char *filename)
 {
     FILE *f = fopen(filename, "r");
+    if(!f)
+        return NULL;
     char *line = buff;
     sint start = 0;
     sint type, ln, cn;
@@ -148,13 +144,13 @@ sint formula_satisfy(Formula *fu, Literal* ls){
     fu = formula_copy(fu);
     sint n = fu->clause_cnt;
     for(sint i=0;ls[i] != NULL_LITERAL && n;i++){
-        Literal l = ID(ls[i]);
+        Literal l = LIT_ID(ls[i]);
         for(sint j=0;j<fu->clause_cnt && n;j++){
             Clause *c = fu->cs[j];
             if(!c)
                 continue;
             for(sint k=0;k<c->ori_length;k++){
-                if(ID(c->ls[k]) == l){
+                if(LIT_ID(c->ls[k]) == l){
                     fu->cs[j] = NULL;
                     free(c);
                     n--;
