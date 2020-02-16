@@ -30,10 +30,12 @@ typedef struct unitary_clause {
 } unitary_clause;
 
 typedef struct recoder {
-    del_clause *dcs_base;
+    del_clause **dcs_base;
+    del_clause *dc_stack;
     sint dcs_top;
 
-    del_literal *dls_base;
+    del_literal **dls_base;
+    del_literal *dl_stack;
     sint dls_top;
 
     step *step_base;

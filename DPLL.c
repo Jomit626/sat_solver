@@ -10,11 +10,22 @@
 
 Recoder *new_recoder(Formula *fu)
 {
+    const int max_step = fu->literal_cnt + 1;
+    
     Recoder *rec = malloc(sizeof(Recoder));
-    rec->dcs_base = malloc(sizeof(del_clause) * (fu->clause_cnt + 1));
-    rec->dcs_top = 0;
 
-    rec->dls_base = malloc(sizeof(del_literal) * (fu->literal_cnt * fu->clause_cnt + 1));
+    rec->dcs_base = malloc(sizeof(del_clause*) * max_step);
+
+    rec->dls_base = malloc(sizeof(del_literal*) * max_step);
+
+    for(int i=0;i<max_step;i++){
+        rec->dcs_base[i] = malloc(sizeof(del_clause) * (fu->clause_cnt + 1));
+        rec->dls_base[i] = malloc(sizeof(del_literal) * (fu->literal_cnt * fu->clause_cnt));
+    }
+
+    rec->dc_stack = rec->dcs_base[0];
+    rec->dcs_top = 0;
+    rec->dl_stack = rec->dls_base[0];
     rec->dls_top = 0;
 
     rec->step_base = malloc(sizeof(step) * (fu->literal_cnt + 1));
@@ -30,9 +41,8 @@ Recoder *new_recoder(Formula *fu)
 }
 
 void recoder_free(Recoder *rec){
+    // TODO:
     while(rec->dcs_top--){
-        del_clause* dc = &rec->dcs_base[rec->dcs_top];
-        free(dc->c);
     }
     free(rec->dcs_base);
     free(rec->dls_base);
@@ -42,32 +52,17 @@ void recoder_free(Recoder *rec){
     free(rec);
 }
 
-static inline void formula_remove_clause(Formula *fu, Recoder *rec, int id, Clause *c)
+static inline void formula_remove_clause_recoded(Formula *fu, Recoder *rec, int id, Clause *c)
 {
-    del_clause *dc = &rec->dcs_base[rec->dcs_top++];
+    del_clause *dc = &rec->dc_stack[rec->dcs_top++];
     dc->id = id;
     dc->c = c;
 
-    fu->cs[id] = NULL;
-    if(id == fu->first_cluase && id == fu->clause_end - 1){
-        fu->first_cluase = fu->clause_end;
-    }else if(id == fu->first_cluase){
-        for(int i=id;i<fu->clause_end;i++)
-            if(fu->cs[i]){
-                fu->first_cluase = i;
-                break;
-            }
-    }else if(id == fu->clause_end - 1){
-        for(int i=id-1;i>fu->first_cluase;i--)
-            if(fu->cs[i]){
-                fu->clause_end = i + 1;
-                break;
-            }
-    }
+    formula_remove_clause(fu,id);
 }
 static inline void clause_remove_literal(Formula *fu, Recoder *rec, Clause *c, Literal l, sint literal_id)
 {
-    del_literal *dl = &rec->dls_base[rec->dls_top++];
+    del_literal *dl = &rec->dl_stack[rec->dls_top++];
     dl->c = c;
     dl->l = &c->ls[literal_id];
 
@@ -100,7 +95,7 @@ void formula_remove_literal(Formula *fu, Recoder *rec, register Literal l)
             if (l1 == l)
             {
                 // remove this clause
-                formula_remove_clause(fu, rec, i, c);
+                formula_remove_clause_recoded(fu, rec, i, c);
                 break;
             }
             else if (l1 == nl)
@@ -135,11 +130,14 @@ static inline void recoder_push(Formula *fu, Recoder *rec, Literal l, sint tag)
     st->dcs_top = rec->dcs_top;
     st->dls_top = rec->dls_top;
     st->ls_cnt = rec->ls_cnt;
+    st->tag = tag;
 
     rec->ucs_top = 0;
 
-    st->tag = tag;
-
+    rec->dcs_top = 0;
+    rec->dc_stack = rec->dcs_base[rec->step_top];
+    rec->dls_top = 0;
+    rec->dl_stack = rec->dls_base[rec->step_top];
 }
 static inline void formula_recover_deleted_clause(Formula *fu, Recoder *rec, del_clause *dc)
 {
@@ -163,23 +161,27 @@ static inline Literal recoder_pop(Formula *fu, Recoder *rec)
 {
     step *st = &rec->step_base[--rec->step_top];
 
-    for (sint top = rec->dcs_top - 1; top >= 0 && top >= st->dcs_top; top--)
+    for (sint top = rec->dcs_top - 1; top >= 0 ; top--)
     {
-        del_clause *dc = &rec->dcs_base[top];
+        del_clause *dc = &rec->dc_stack[top];
         formula_recover_deleted_clause(fu, rec, dc);
     }
-    rec->dcs_top = st->dcs_top;
 
-    for (sint top = st->dls_top; top < rec->dls_top; top++)
+    for (sint top = rec->dls_top - 1; top >= 0; top--)
     {
-        del_literal *dl = &rec->dls_base[top];
+        del_literal *dl = &rec->dl_stack[top];
         formula_recover_deleted_literal(fu, rec, dl);
     }
-    rec->dls_top = st->dls_top;
 
     rec->ucs_top = 0;
 
     rec->ls_cnt = st->ls_cnt;
+
+    rec->dcs_top = st->dcs_top;
+    rec->dls_top = st->dls_top;
+    sint step = rec->step_top;
+    rec->dc_stack = rec->dcs_base[step];
+    rec->dl_stack = rec->dls_base[step];
 
     return (st->tag == NEG_TAG) ? NULL_LITERAL : st->l;
 }

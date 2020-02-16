@@ -162,3 +162,22 @@ sint formula_satisfy(Formula *fu, Literal* ls){
     formula_free(fu);
     return n;
 }
+
+inline void formula_remove_clause(Formula *fu, int id){
+    fu->cs[id] = NULL;
+    if(id == fu->first_cluase && id == fu->clause_end - 1){
+        fu->first_cluase = fu->clause_end;
+    }else if(id == fu->first_cluase){
+        for(int i=id;i<fu->clause_end;i++)
+            if(fu->cs[i]){
+                fu->first_cluase = i;
+                break;
+            }
+    }else if(id == fu->clause_end - 1){
+        for(int i=id-1;i>fu->first_cluase;i--)
+            if(fu->cs[i]){
+                fu->clause_end = i + 1;
+                break;
+            }
+    }
+}

@@ -21,6 +21,8 @@ void formula_print(Formula *fu);
 sint formula_satisfy(Formula *fu, Literal* ls);
 Formula *formula_copy(Formula *fu);
 
+void formula_remove_clause(Formula *fu, int id);
+
 #define Loop_Literals_in_Clause(_l, _c, _i)                  \
     Literal _l;                                  \
     for (sint _i = 0; _i < _c->ori_length; ++_i) \
