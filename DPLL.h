@@ -29,6 +29,13 @@ typedef struct unitary_clause {
     Literal l;
 } unitary_clause;
 
+typedef struct variable_assign {
+    Literal l;
+    sint impl_clause_id;
+    sint step;
+    Clause* impl_clause;
+} variable_assign;
+
 typedef struct recoder {
     del_clause **dcs_base;
     del_clause *dc_stack;
@@ -44,16 +51,15 @@ typedef struct recoder {
     unitary_clause *ucs_base;
     sint ucs_top;
 
-    Literal *ls;
+    Literal* ls;
     sint ls_cnt;
-} Recoder;
+    variable_assign *vas;
 
-typedef struct literal_info
-{
-    sint related_clause_cnt;
-    sint cap;
-    sint related_clauses[];
-} Lit_info;
+    Clause *conflict_clause;
+
+    sint conflict_cnt;
+    sint n;
+} Recoder;
 
 typedef struct info_buff
 {
@@ -61,9 +67,13 @@ typedef struct info_buff
     sint clauses_length2_cnt;
     Clause** clauses_length3;
     Clause** clauses_length2;
+
     sint cnt;
     sint *p;
     sint *h;
+
+    Literal* conflict_induced_clause;
+    sint * visited;
 } Info_buff;
 
 

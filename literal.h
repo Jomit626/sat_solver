@@ -32,7 +32,7 @@ typedef int32_t sint;
 #define LIT_REMOVE_DEL_BIT(_x) ((_x)&~DEL_MASK)
 
 #define LIT_TO_INT(_x) (IS_NEG(_x) ? (int)(-(_x>>2)) : (int)(_x>>2))
-#define LIT_FROM_INT(_x) (((_x) < 0) ? NEG((-((Literal)(_x))) << 2) : (((Literal)(_x))<<2) )
+#define LIT_FROM_INT(_x) (((_x) < 0) ? LIT_NEG((-((Literal)(_x))) << 2) : (((Literal)(_x))<<2) )
 #define LIT_FROM_ID(_x) ((_x)<<1)
 #endif
 #endif

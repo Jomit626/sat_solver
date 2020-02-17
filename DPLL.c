@@ -2,7 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-
+#include <assert.h>
+#include "dynatic_formula.h"
 #include "DPLL.h"
 
 #define NORMAL_TAG 0
@@ -34,16 +35,23 @@ Recoder *new_recoder(Formula *fu)
     rec->ucs_base = malloc(sizeof(unitary_clause) * (fu->clause_cnt + 1));
     rec->ucs_top = 0;
 
-    rec->ls = malloc(sizeof(Literal) * (fu->literal_cnt + 1));
+    rec->ls = malloc(sizeof(Literal)* (fu->literal_cnt + 1));
     rec->ls_cnt = 0;
+    
+    rec->vas = malloc(sizeof(variable_assign) * (fu->literal_cnt + 1));
+    for(int i=0;i<fu->literal_cnt+ 1;i++){
+        rec->vas[i].l = NULL_LITERAL;
+    }
 
+    rec->conflict_cnt = 0;
+    rec->n = 0;
     return rec;
 }
 
 void recoder_free(Recoder *rec){
     // TODO:
-    while(rec->dcs_top--){
-    }
+    //while(rec->dcs_top--){
+    //}
     free(rec->dcs_base);
     free(rec->dls_base);
     free(rec->step_base);
@@ -101,27 +109,35 @@ void formula_remove_literal(Formula *fu, Recoder *rec, register Literal l)
             else if (l1 == nl)
             {
                 // remove this literal
-                clause_remove_literal(fu, rec, c, l1, j);
-
-                if (c->length == 1)
+                if (c->length == 2){
+                    clause_remove_literal(fu, rec, c, l1, j);
                     recode_unitary_clause(fu, rec, c, i);
-                else if(c->length == 0)
-                    break;// TODO:
-                break;
+                    break;
+                } else if(c->length == 1){
+                    clause_remove_literal(fu, rec, c, l1, j);
+                    rec->conflict_clause = c;
+                    return;
+                } else {
+                    clause_remove_literal(fu, rec, c, l1, j);
+                    break;
+                }
             }
         }
     }
 }
 
-static inline void env_result_add(Formula *fu, Recoder *rec, Literal l)
+static inline void env_result_add(Formula *fu, Recoder *rec, Literal l, Clause* impl_clause, sint id)
 {
-    for (sint i = 0; i < rec->ls_cnt; i++)
-    {
-        if (LIT_to_VAR(rec->ls[i]) == LIT_to_VAR(l))
-            return;
+    variable_assign *va = &rec->vas[LIT_to_VAR(l)];
+    if(va->l == NULL_LITERAL){
+        rec->ls[rec->ls_cnt++] = l;
+
+        va->l = l;
+        va->impl_clause = impl_clause;
+        va->impl_clause_id = id;
+        va->step = rec->step_top;
     }
 
-    rec->ls[rec->ls_cnt++] = l;
 }
 static inline void recoder_push(Formula *fu, Recoder *rec, Literal l, sint tag)
 {
@@ -175,6 +191,9 @@ static inline Literal recoder_pop(Formula *fu, Recoder *rec)
 
     rec->ucs_top = 0;
 
+    for(sint top = rec->ls_cnt - 1; top >= st->ls_cnt; top--){
+        rec->vas[LIT_to_VAR(rec->ls[top])].l = NULL_LITERAL;
+    }
     rec->ls_cnt = st->ls_cnt;
 
     rec->dcs_top = st->dcs_top;
@@ -199,6 +218,9 @@ Info_buff *new_info_buff(Formula *fu)
     buff->p = malloc(buff->cnt);
     buff->h = malloc(buff->cnt);
 
+    buff->conflict_induced_clause = malloc(sizeof(Literal) * (fu->literal_cnt + 1));
+
+    buff->visited = malloc(sizeof(sint) * (fu->clause_cnt + 1));
     return buff;
 }
 
@@ -270,17 +292,33 @@ Literal formula_select_key_literal(Formula *fu, Info_buff *buff)
 static inline int formula_empty(Formula *fu){
     return fu->first_cluase == fu->clause_end;
 }
-static inline Literal formula_choose_literal(Formula *fu, Info_buff *buff)
-{
+#define DDD
+static inline int formula_check(Formula *fu, Dformula *dfu, Recoder *rec){
     if(formula_empty(fu))
-        return SUCCESS_LITERAL;
-    // choose the first literal
-    // and check other things
+        return -1;
+    if(rec->conflict_clause)
+        return 1;
+#ifdef DDD
+    int p = dfumula_check(dfu,rec->vas,&rec->conflict_clause);
+    if(p)rec->n ++;
+    return p ? 1 : 0;
+#else
+    return 0;
+#endif
+    //if(p)
+    //    return rec->step_top - p;
+    //else 
+    //    return 0;
+}
+
+static inline Literal formula_choose_literal(Formula *fu, Recoder *rec, Info_buff *buff)
+{
     Literal l = 0;
     info_buff_reset(buff);
     Loop_Clauses_in_Formula(c, fu, i)
     {
         if (c->length == 0){
+            //rec->conflict_clause = c;
             return ERROR_LITERAL;
         } else if(c->length == 3){
             buff->clauses_length3[buff->clauses_length3_cnt++] = c;
@@ -296,8 +334,9 @@ static inline Literal formula_choose_literal(Formula *fu, Info_buff *buff)
             }
         }
     }
-    if(buff->clauses_length3_cnt){
-    //if(0){    
+
+    //if(buff->clauses_length3_cnt){
+    if(0){    
         Literal key = formula_select_key_literal(fu,buff);
         if(key != NULL_LITERAL){
             l = key;
@@ -315,20 +354,58 @@ static inline Literal* recoder_form_result(Recoder *rec){
     return res;
 }
 
+static int conflict_anal0(variable_assign *vas, sint* visited,sint *added, Literal* cic, sint n,const  Clause *c){
+    for(sint i=0;i<c->ori_length;i++){
+        Literal l = c->ls[i];
+        Variable v = LIT_to_VAR(l);
+
+        variable_assign *va = &vas[v];
+        sint id = va->impl_clause_id;
+        if(va->impl_clause == NULL && !added[v]){
+            added[v] = 1;
+            cic[n++] = LIT_NEG(LIT_REMOVE_DEL_BIT(va->l));
+        } else if(!visited[id]) {
+            visited[id] = 1;
+            n = conflict_anal0(vas,visited,added, cic,n,va->impl_clause);
+        }
+    }
+    return n;
+}
+
+Clause *conflict_anal(Formula* fu, Recoder *rec, Info_buff* buff){
+    Literal *cic = buff->conflict_induced_clause;
+    sint *visited = buff->visited;
+    sint *added = buff->p;
+    memset(added,0x0,sizeof(sint) * fu->literal_cnt + 1);
+    memset(visited,0x0,sizeof(sint) * fu->clause_cnt);
+    visited[0] = 1;
+    sint n = conflict_anal0(rec->vas,visited,added,cic,0,rec->conflict_clause);
+
+    Clause *c = new_clause(n);
+    memcpy(&c->ls,cic,sizeof(Literal)*n);
+    return c;
+}
+
+void env_add_cic(Formula *fu, Recoder *rec, Clause *c){
+
+}
+
 Literal *DPLL(Formula *fu)
 {
     fu = formula_copy(fu);
     Recoder *rec = new_recoder(fu);
     Info_buff *buff = new_info_buff(fu);
+    Dformula *dfu = new_dformula(fu->type,fu->literal_cnt,1024);
+
     recoder_push(fu, rec, NULL_LITERAL, NORMAL_TAG);
 
     Literal l;
     sint tag = NORMAL_TAG;
 
-    while ((l = formula_choose_literal(fu,buff)))
+    while (1)
     {
-        if (l == SUCCESS_LITERAL)
-        {
+        int backtrack_step = formula_check(fu,dfu,rec);
+        if(backtrack_step < 0){
             formula_free(fu);
             info_buff_free(buff);
             
@@ -336,25 +413,44 @@ Literal *DPLL(Formula *fu)
             recoder_free(rec);
             return res;
         }
-        else if (l == ERROR_LITERAL)
+        else if (backtrack_step > 0)
         {
-            while (rec->step_top && !(l = recoder_pop(fu, rec)))
-                ;
+#ifdef DDD
+            Clause *c = conflict_anal(fu,rec,buff);
+            clause_print(c);
+            //printf("%d ",c->length);
+            //if(c->length >= 8)
+            //    clause_free(c);
+            // else 
+            printf("%d %d\n",c->length,rec->ls_cnt);
+            dfu = dformula_add_clause(dfu,c);
+#endif
+            rec->conflict_clause = NULL;
+            rec->conflict_cnt++;
+            if(rec->conflict_cnt % 1000 == 0)
+                printf("%d %d %d\n",rec->conflict_cnt,dfu->clause_cnt,rec->n);
+            while(rec->step_top) {
+                backtrack_step--;
+                l = recoder_pop(fu, rec);
+                if(l)
+                    break;
+            }
             if (rec->step_top == 0)
                 return NULL;
             tag = NEG_TAG;
         }
         else
         {
+            l = formula_choose_literal(fu,rec,buff);
             tag = NORMAL_TAG;
         }
         recoder_push(fu, rec, l, tag);
         l = (tag == NEG_TAG) ? LIT_NEG(l) : l;
-        env_result_add(fu, rec, l);
+        env_result_add(fu, rec, l, NULL, 0);
         formula_remove_literal(fu, rec, l);
 
         // unitary clause rule
-        while (rec->ucs_top)
+        while (rec->ucs_top && !rec->conflict_clause)
         {
             unitary_clause *uc = &rec->ucs_base[--rec->ucs_top];
 
@@ -362,13 +458,71 @@ Literal *DPLL(Formula *fu)
                 continue;
 
             Literal l = uc->l;
-            env_result_add(fu, rec, l);
+            env_result_add(fu, rec, l, uc->c, uc->id);
 
             formula_remove_literal(fu, rec, l);
         }
     }
     return NULL;
 }
-void test(){
 
+void print_result(Literal *ans) {
+    if(!ans){
+        printf("FIVE!\n");
+        return;
+    }
+    for(int i=0;ans[i] != NULL_LITERAL ;i++){
+        Literal l =ans[i];
+        printf("%d ",LIT_TO_INT(l));
+    }
+    putchar('\n');
+}
+
+void test(){
+    const char* cnf_filename;
+    cnf_filename = "tests/spec_test";
+    Formula *fu = new_formula_from_file(cnf_filename);
+    formula_print(fu);
+
+    Recoder *rec = new_recoder(fu);
+    Info_buff *buff = new_info_buff(fu);
+    Dformula *dfu = new_dformula(fu->type,fu->literal_cnt,1024);
+    Clause *c = fu->cs[5];
+
+    env_result_add(fu,rec,LIT_FROM_INT(-9),NULL,0);
+    formula_remove_literal(fu,rec,LIT_FROM_INT(-9));
+
+    env_result_add(fu,rec,LIT_FROM_INT(-10),NULL,0);
+    formula_remove_literal(fu,rec,LIT_FROM_INT(-10));
+
+    env_result_add(fu,rec,LIT_FROM_INT(-11),NULL,0);
+    formula_remove_literal(fu,rec,LIT_FROM_INT(-11));
+
+    env_result_add(fu,rec,LIT_FROM_INT(1),NULL,0);
+    formula_remove_literal(fu,rec,LIT_FROM_INT(1));
+
+    while (rec->ucs_top && !rec->conflict_clause)
+    {
+        unitary_clause *uc = &rec->ucs_base[--rec->ucs_top];
+        if (!fu->cs[uc->id]) // if the clause is still in the formula
+            continue;
+
+        Literal l = uc->l;
+        clause_print(uc->c);
+        printf("%d\n",LIT_TO_INT(l));
+        env_result_add(fu, rec, l, uc->c, uc->id);
+
+        formula_remove_literal(fu, rec, l);
+    }
+    formula_print(fu);
+    clause_print(c);
+    clause_print(rec->conflict_clause);
+    c = conflict_anal(fu,rec,buff);
+    dformula_add_clause(dfu,c);
+    clause_print(c);
+    Literal *res = recoder_form_result(rec);
+
+    printf("\n\n%d\n",dfumula_check(dfu,rec->vas,&c));
+    print_result(res);
+    dformula_print(dfu);
 }

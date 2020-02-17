@@ -23,7 +23,7 @@ Formula *new_formula(sint type, sint ln, sint cn)
 
 void formula_print(Formula *fu)
 {
-    printf("Formula:%p Type:%d Literal:%d Clause:%d\n", fu, fu->type, fu->literal_cnt, fu->clause_cnt);
+    printf("Formula:%p Type:%d Literal:%d Clause:%d start:%d end:%d\n", fu, fu->type, fu->literal_cnt, fu->clause_cnt,fu->first_cluase,fu->clause_end);
     Loop_Clauses_in_Formula(c, fu, i)
     {
         printf("%d-",i);
@@ -174,7 +174,7 @@ inline void formula_remove_clause(Formula *fu, int id){
                 break;
             }
     }else if(id == fu->clause_end - 1){
-        for(int i=id-1;i>fu->first_cluase;i--)
+        for(int i=id;i>=fu->first_cluase;i--)
             if(fu->cs[i]){
                 fu->clause_end = i + 1;
                 break;
