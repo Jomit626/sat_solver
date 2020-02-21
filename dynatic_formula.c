@@ -1,7 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-
 #include "dynatic_formula.h"
 
 Dformula* new_dformula(sint type,sint ln, sint cap){
@@ -61,8 +60,8 @@ int dfumula_check(Dformula *dfu,variable_assign *vas,Clause **conflict_clause){
                 continue;
             } else if(va->l == NULL_LITERAL){
                 satisify = UNKOWN;
-                //if(c->length >= 6) 
-                //    dformula_remove_clause(dfu,i);
+                if(c->length >= 4) 
+                    dformula_remove_clause(dfu,i);
                 break;
             }
         }

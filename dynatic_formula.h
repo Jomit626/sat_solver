@@ -19,4 +19,5 @@ Dformula* dformula_add_clause(Dformula *dfu,Clause *c);
 int dfumula_check(Dformula *dfu,variable_assign *vas,Clause **conflict_clause);
 void dformula_print(Dformula *dfu);
 void dformula_remove_clause(Dformula *dfu,int id);
+
 #endif

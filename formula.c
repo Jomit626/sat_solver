@@ -115,6 +115,16 @@ Formula *new_formula_from_file(const char *filename)
     return fu;
 }
 
+void formula_dump(Formula* fu,FILE *f){
+    fprintf(f,"p cnf %d %d\n",fu->literal_cnt, fu->clause_cnt);
+    Loop_Clauses_in_Formula(c,fu,i){
+        for(int j=0;j<c->ori_length;j++){
+            fprintf(f,"%d ",LIT_TO_INT(c->ls[j]));
+        }
+        fprintf(f,"0\n");
+    }
+}
+
 Formula *formula_copy(Formula *fu){
     Formula * nfu = new_formula(fu->type,fu->literal_cnt,fu->clause_cnt);
     for (sint i = 0; i < fu->clause_cnt; i++)
@@ -140,22 +150,28 @@ void formula_free(Formula *fu){
     free(fu);
 }
 
-sint formula_satisfy(Formula *fu, Literal* ls){
+void formula_sort(Formula* fu){
+    for(int i=0;i<fu->clause_cnt;i++){
+        for(int j=0;j<fu->clause_cnt - i -1;j ++){
+            Clause *c1 = fu->cs[j];
+            Clause *c2 = fu->cs[j + 1];
+            if(c1->ori_length > c2->ori_length){
+                fu->cs[j + 1] = c1;
+                fu->cs[j] = c2;
+            }
+        }
+    }
+}
+
+sint formula_satisfy(Formula *fu, Literal* res){
     fu = formula_copy(fu);
     sint n = fu->clause_cnt;
-    for(sint i=0;ls[i] != NULL_LITERAL && n;i++){
-        Literal l = LIT_ID(ls[i]);
-        for(sint j=0;j<fu->clause_cnt && n;j++){
-            Clause *c = fu->cs[j];
-            if(!c)
-                continue;
-            for(sint k=0;k<c->ori_length;k++){
-                if(LIT_ID(c->ls[k]) == l){
-                    fu->cs[j] = NULL;
-                    free(c);
-                    n--;
-                    break;
-                }
+    Loop_Clauses_in_Formula(c,fu,i){
+        Loop_Literals_in_Clause(l,c,j){
+            Variable v = LIT_to_VAR(l);
+            if(res[v] == l){
+                n--;
+                break;
             }
         }
     }

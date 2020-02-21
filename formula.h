@@ -20,7 +20,8 @@ void formula_free(Formula *fu);
 void formula_print(Formula *fu);
 sint formula_satisfy(Formula *fu, Literal* ls);
 Formula *formula_copy(Formula *fu);
-
+void formula_dump(Formula* fu,FILE *f);
+void formula_sort(Formula* fu);
 void formula_remove_clause(Formula *fu, int id);
 
 #define Loop_Literals_in_Clause(_l, _c, _i)                  \

@@ -55,7 +55,8 @@ typedef struct recoder {
     sint ls_cnt;
     variable_assign *vas;
 
-    Clause *conflict_clause;
+    Clause **conflict_clause;
+    sint conflict_clause_cnt;
 
     sint conflict_cnt;
     sint n;
