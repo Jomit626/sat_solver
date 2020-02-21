@@ -53,7 +53,10 @@ typedef struct recoder {
 
     Literal* ls;
     sint ls_cnt;
+    sint new_vas;
     variable_assign *vas;
+
+    double *lit_activity;
 
     Clause **conflict_clause;
     sint conflict_clause_cnt;

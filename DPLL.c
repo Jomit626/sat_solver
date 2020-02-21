@@ -42,7 +42,9 @@ Recoder *new_recoder(Formula *fu)
     for(int i=0;i<fu->literal_cnt+ 1;i++){
         rec->vas[i].l = NULL_LITERAL;
     }
+    rec->lit_activity = calloc(sizeof(double),(fu->literal_cnt * 2 + 2));
 
+    rec->conflict_clause = malloc(sizeof(Clause *) * fu->clause_cnt);
     rec->conflict_cnt = 0;
     rec->n = 0;
     return rec;
@@ -92,41 +94,7 @@ static inline void recode_unitary_clause(Formula *fu, Recoder *rec, Clause *c, s
         }
 }
 
-void formula_remove_literal(Formula *fu, Recoder *rec, register Literal l)
-{
-    register Literal nl = LIT_NEG(l);
-
-    Loop_Clauses_in_Formula(c,fu,i)
-    {
-        Loop_Literals_in_Clause(l1,c,j)
-        {
-            if (l1 == l)
-            {
-                // remove this clause
-                formula_remove_clause_recoded(fu, rec, i, c);
-                break;
-            }
-            else if (l1 == nl)
-            {
-                // remove this literal
-                if (c->length == 2){
-                    clause_remove_literal(fu, rec, c, l1, j);
-                    recode_unitary_clause(fu, rec, c, i);
-                    break;
-                } else if(c->length == 1){
-                    clause_remove_literal(fu, rec, c, l1, j);
-                    rec->conflict_clause = c;
-                    return;
-                } else {
-                    clause_remove_literal(fu, rec, c, l1, j);
-                    break;
-                }
-            }
-        }
-    }
-}
-
-static inline void env_result_add(Formula *fu, Recoder *rec, Literal l, Clause* impl_clause, sint id)
+static inline void env_result_add(Recoder *rec, Literal l, Clause* impl_clause, sint id)
 {
     variable_assign *va = &rec->vas[LIT_to_VAR(l)];
     if(va->l == NULL_LITERAL){
@@ -154,6 +122,8 @@ static inline void recoder_push(Formula *fu, Recoder *rec, Literal l, sint tag)
     rec->dc_stack = rec->dcs_base[rec->step_top];
     rec->dls_top = 0;
     rec->dl_stack = rec->dls_base[rec->step_top];
+
+    rec->conflict_clause_cnt = 0;
 }
 static inline void formula_recover_deleted_clause(Formula *fu, Recoder *rec, del_clause *dc)
 {
@@ -292,25 +262,29 @@ Literal formula_select_key_literal(Formula *fu, Info_buff *buff)
 static inline int formula_empty(Formula *fu){
     return fu->first_cluase == fu->clause_end;
 }
-#define DDD
-static inline int formula_check(Formula *fu, Dformula *dfu, Recoder *rec){
-    if(formula_empty(fu))
-        return -1;
-#ifdef DDD
-    int p = dfumula_check(dfu,rec->vas,&rec->conflict_clause);
-    if(p){
-        rec->n ++;
-        return 1;
+static inline Literal formula_choose_first_literal(Formula *fu, Recoder *rec){
+    Literal l = 0;
+    Loop_Clauses_in_Formula(c, fu, i)
+    {
+        Loop_Literals_in_Clause(_l,c,j)
+        {
+                l = _l;
+                break;
+        }
     }
-#endif
-    if(rec->conflict_clause)
-        return 1;
-    //if(p)
-    //    return rec->step_top - p;
-    //else 
-    //    return 0;
-    return 0;
+
+    return l;
 }
+
+/* static inline Literal formula_choose_activity_literal(Formula *fu, Recoder *rec){
+    Literal l = NULL_LITERAL;
+    double h = -1.0;
+    for(sint i=1;i<=fu->literal_cnt;i++){
+        Literal l0 = LIT_FROM_ID (i);
+        double act = rec->lit_activity[i];
+    }
+    return l;
+} */
 
 static inline Literal formula_choose_literal(Formula *fu, Recoder *rec, Info_buff *buff)
 {
@@ -355,7 +329,7 @@ static inline Literal* recoder_form_result(Formula *fu,Recoder *rec){
     return res;
 }
 
-static int conflict_anal0(variable_assign *vas, sint* visited,sint *added, Literal* cic, sint n,const  Clause *c){
+/* static int conflict_anal0(variable_assign *vas, sint* visited,sint *added, Literal* cic, sint n,const  Clause *c){
     for(sint i=0;i<c->ori_length;i++){
         Literal l = c->ls[i];
         Variable v = LIT_to_VAR(l);
@@ -371,9 +345,9 @@ static int conflict_anal0(variable_assign *vas, sint* visited,sint *added, Liter
         }
     }
     return n;
-}
+} */
 
-Clause *conflict_anal(Formula* fu, Recoder *rec, Info_buff* buff){
+/* Clause *conflict_anal(Formula* fu, Recoder *rec, Info_buff* buff){
     Literal *cic = buff->conflict_induced_clause;
     sint *visited = buff->visited;
     sint *added = buff->p;
@@ -385,14 +359,145 @@ Clause *conflict_anal(Formula* fu, Recoder *rec, Info_buff* buff){
     Clause *c = new_clause(n);
     memcpy(&c->ls,cic,sizeof(Literal)*n);
     return c;
+} */
+
+static void unitary_clause_anal(Recoder *rec,Clause *c, int cluase_id){
+    Loop_Literals_in_Clause(l,c,k)
+        break;
+    Variable v = LIT_to_VAR(l);
+
+    env_result_add(rec,l,c,cluase_id);
+}
+
+static inline void record_conflict_clause(Recoder *rec, Clause* c){
+    rec->conflict_clause[rec->conflict_clause_cnt++] = c;
+}
+
+static int Propagat(Formula *fu, Recoder *rec){
+    register variable_assign *vas = rec->vas;
+    int new_var_idx = fu->clause_cnt + 1;
+    int conflict_idx = 0, new_var;
+
+    while(1){
+        new_var = 0;
+        Loop_Clauses_in_Formula(c,fu,i){
+            if(i > new_var_idx && !new_var)
+                break;
+            
+            Loop_Literals_in_Clause(l,c,j){
+                Variable v = LIT_to_VAR(l);
+                Literal val = vas[v].l;
+                //printf("%d",c->length);
+                if(val == NULL_LITERAL){
+                    continue;
+                }else if(val == l){ // satisify
+                    formula_remove_clause_recoded(fu,rec,i,c);
+                    break;
+                } else {
+                    clause_remove_literal(fu,rec,c,l,j);
+                    if(c->length == 0){
+                        //formula_remove_clause_recoded(fu,rec,i,c);
+                        record_conflict_clause(rec,c);
+
+                        conflict_idx = i;
+                        goto __conflict_detected;
+                    } else if(c->length == 1){
+                        // unitary clause
+                        //clause_remove_literal(fu,rec,c,l,j);// TODO:
+                        //formula_remove_clause_recoded(fu,rec,i,c);
+                        unitary_clause_anal(rec,c,i);
+
+                        new_var_idx = i;
+                        new_var = 1;
+                        break;
+                    } else {
+                        //clause_remove_literal(fu,rec,c,l,j);
+                    }
+                }
+            }
+        }
+
+        if(!new_var)
+            break;
+    }
+    return 0;
+
+    __conflict_detected:;
+    if(new_var){// then check clauses before new_var_idx
+        Loop_Clauses_in_Formula(c,fu,i){
+            if(i >= new_var_idx)
+                break;
+            if(c->length > 2)
+                continue;
+            Loop_Literals_in_Clause(l,c,j){
+                Variable v = LIT_to_VAR(l);
+                Literal val = vas[v].l;
+                if(val == LIT_NEG(l)){ 
+                    if(c->length == 1){
+                        record_conflict_clause(rec,c);
+                    } else {// c->length == 2;
+                        for(sint k=j+1;k<c->ori_length;k++){
+                            Literal l = c->ls[k];
+                            if(IS_DELETED(l))
+                                continue;
+                            Variable v = LIT_to_VAR(l);
+                            Literal val = vas[v].l;
+                            if(val == LIT_NEG(l)){
+                                record_conflict_clause(rec,c);
+                            }
+                            break;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    // then check clauses after conflict_idx
+    //int i = conflict_idx + 1;
+    //if(i <= new_var_idx)
+    //    return 1;
+    for(int i = conflict_idx + 1;i<fu->clause_end;i++){
+        Clause*c = fu->cs[i];
+        if(!c)
+            continue;
+
+        if(c->length > 2)
+            continue;
+        
+        Loop_Literals_in_Clause(l,c,j){
+            Variable v = LIT_to_VAR(l);
+            Literal val = vas[v].l;
+            if(val == LIT_NEG(l)){ 
+                if(c->length == 1){
+                    record_conflict_clause(rec,c);
+                } else {// c->length == 2;
+                    for(sint k=j+1;k<c->ori_length;k++){
+                        Literal l = c->ls[k];
+                        if(IS_DELETED(l))
+                            continue;
+                        Variable v = LIT_to_VAR(l);
+                        Literal val = vas[v].l;
+                        if(val == LIT_NEG(l)){
+                            record_conflict_clause(rec,c);
+                        }
+                        break;
+                    }
+                }
+            }
+            break;
+        }
+    }
+    return 1;
 }
 
 Literal *DPLL(Formula *fu)
 {
     fu = formula_copy(fu);
     Recoder *rec = new_recoder(fu);
-    Info_buff *buff = new_info_buff(fu);
-    Dformula *dfu = new_dformula(fu->type,fu->literal_cnt,1024);
+    //Info_buff *buff = new_info_buff(fu);
+    //Dformula *dfu = new_dformula(fu->type,fu->literal_cnt,1024);
 
     recoder_push(fu, rec, NULL_LITERAL, NORMAL_TAG);
 
@@ -401,64 +506,35 @@ Literal *DPLL(Formula *fu)
 
     while (1)
     {
-        int backtrack_step = formula_check(fu,dfu,rec);
-        if(backtrack_step < 0){
-            Literal *res = recoder_form_result(fu,rec);
-            
-            formula_free(fu);
-            info_buff_free(buff);
-            recoder_free(rec);
-            return res;
+        int conflict = Propagat(fu,rec);
+        
+        int success = formula_empty(fu);
+        if(success){
+                Literal *res = recoder_form_result(fu,rec);
+                
+                //TODO: free
+                return res;
         }
-        else if (backtrack_step > 0)
-        {
-#ifdef DDD
-            Clause *c = conflict_anal(fu,rec,buff);
-            //clause_print(c);
-            //printf("%d ",c->length);
-            //if(c->length >= 8)
-            //    clause_free(c);
-            // else 
-            //printf("%d %d\n",c->length,rec->ls_cnt);
-            dfu = dformula_add_clause(dfu,c);
-#endif
-            rec->conflict_clause = NULL;
-            rec->conflict_cnt++;
-            //if(rec->conflict_cnt % 1000 == 0)
-            //    printf("%d %d %d\n",rec->conflict_cnt,dfu->clause_cnt,rec->n);
+
+        if(conflict){
+            //puts("conf");
             while(rec->step_top) {
-                backtrack_step--;
                 l = recoder_pop(fu, rec);
-                if(l)
+                if(l != NULL_LITERAL)
                     break;
             }
             if (rec->step_top == 0)
                 return NULL;
             tag = NEG_TAG;
-        }
-        else
-        {
-            l = formula_choose_literal(fu,rec,buff);
+        } else {
+            l = formula_choose_first_literal(fu,rec);
             tag = NORMAL_TAG;
         }
+
         recoder_push(fu, rec, l, tag);
         l = (tag == NEG_TAG) ? LIT_NEG(l) : l;
-        env_result_add(fu, rec, l, NULL, 0);
-        formula_remove_literal(fu, rec, l);
-
-        // unitary clause rule
-        while (rec->ucs_top && !rec->conflict_clause)
-        {
-            unitary_clause *uc = &rec->ucs_base[--rec->ucs_top];
-
-            if (!fu->cs[uc->id]) // if the clause is still in the formula
-                continue;
-
-            Literal l = uc->l;
-            env_result_add(fu, rec, l, uc->c, uc->id);
-
-            formula_remove_literal(fu, rec, l);
-        }
+        //printf("\nchoose:%d\n",LIT_TO_INT(l));
+        env_result_add(rec, l, NULL, 0);
     }
     return NULL;
 }
@@ -476,4 +552,17 @@ void print_result(Formula* fu,Literal *res) {
 }
 
 void test(){
+    const char* cnf_filename = "tests/spec_test";
+    Formula *fu = new_formula_from_file(cnf_filename);
+    Recoder *rec = new_recoder(fu);
+
+    formula_print(fu);
+    recoder_push(fu, rec, NULL_LITERAL, NORMAL_TAG);
+
+    env_result_add(rec, LIT_FROM_INT(1), NULL, 0);
+    env_result_add(rec, LIT_FROM_INT(4), NULL, 0);
+    int i = Propagat(fu,rec);
+    if(i) puts("conf");
+    formula_print(fu);
+
 }
