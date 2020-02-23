@@ -64,7 +64,7 @@ int assign(Formula *fu, Recoder *rec, Literal l){
 
         if(c->unbounded_lit_cnt == 0 && c->true_lit_cnt == 0)
             conf = 1;
-        if(c->unbounded_lit_cnt == 1){
+        if(c->unbounded_lit_cnt == 1 && c->true_lit_cnt == 0){
             Literal l = choose_unbound_lit(rec,c);
             record_untiary_clause(rec,c,l);
         }
@@ -151,7 +151,7 @@ Literal choose_lit(Formula *fu, Recoder *rec){
             return l;
         }
     }
-    return 0;
+    return NULL_LITERAL;
 }
 
 static inline void recorde(Formula *fu,Recoder *rec, Literal l, int neg){
@@ -200,6 +200,8 @@ int protagnit(Formula *fu, Recoder *rec, Literal l){
 
 VariableAssignment *DPLL(Formula *fu){
     Recoder* rec = new_recoder(fu);
+
+    recorde(fu,rec,0,1);
 
     int neg = 0;    
     Literal l = choose_lit(fu,rec);
