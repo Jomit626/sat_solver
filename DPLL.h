@@ -26,6 +26,7 @@ typedef struct recoder {
     //Statistics
     int conflict_cnt;
     int variable_cnt;
+    int clean_cnt;
     double *lit_activity;
 
     int n;
@@ -35,17 +36,19 @@ typedef struct recoder {
 
     RemovedClauseRelation **removed_clause_relation;
     int *removed_clause_relation_tops;
+    int removed_relat;
 
     int step;
     Step *step_base;
     Literal *ls;
     int ls_cnt;
-    VariableAssignment *vas;
     ClauseArray** pos_relat_clause;
     ClauseArray** neg_relat_clause;
 
     UntiaryClause *untiary_clauses;
     int untiary_clauses_cnt;
+
+    VariableAssignment vas[0];
 } Recoder;
 
 #endif

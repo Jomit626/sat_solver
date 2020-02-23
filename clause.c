@@ -4,10 +4,7 @@
 #include "clause.h"
 
 Clause* new_clause(int n){
-    Clause* c = malloc(sizeof(Clause) + n * sizeof(Literal));
-    c->true_lit_cnt = 0;
-    c->unbounded_lit_cnt = 0;
-    c->deleted = 0;
+    Clause* c = calloc(sizeof(Clause) + n * sizeof(Literal),1);
     c->length = n;
     return c;
 }
@@ -17,7 +14,7 @@ void clause_free(Clause* c){
 }
 
 void clause_print(Clause *c){
-    printf("Clause:%p %d %d\n-Litreals:",c,c->true_lit_cnt,c->unbounded_lit_cnt);
+    printf("Clause:%p %d %d\n-Litreals:",c,c->satisifid,c->unbounded_lit_cnt);
     for(int i=0;i<c->length;i++){
         Literal l = c->ls[i];
         printf("%d ",Lit_to_Int(l));
@@ -54,7 +51,7 @@ void cluase_array_free(ClauseArray *ca){
 }
 
 inline int is_clause_satisfied(Clause* c){
-    return c->true_lit_cnt > 0;
+    return c->satisifid;
 }
 
 

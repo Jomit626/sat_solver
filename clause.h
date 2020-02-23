@@ -8,7 +8,9 @@ typedef int ClauseRef;
 typedef struct clause
 {
     int deleted;
-    int true_lit_cnt;
+    int satisifid;
+    int satisifid_step;
+    int satisifid_cause;
     int unbounded_lit_cnt;
     int length;
     Literal ls[0];
@@ -21,7 +23,7 @@ Clause *clause_copy(Clause *c);
 int is_clause_satisfied(Clause* c);
 
 void clause_print(Clause *c);
-#define Loop_Literals_in_Clause(_c,_i) \
+#define LoopLiteralsInClause(_c,_i) \
     for (int _i = 0; _i < _c->length; _i++)
 
 typedef struct {
@@ -37,9 +39,9 @@ void cluase_array_free(ClauseArray *ca);
 void cluase_array_remove(ClauseArray *ca, int idx);
 void cluase_array_push(ClauseArray *ca, Clause* c);
 void cluase_array_clean(ClauseArray *lrc);
-/*     for(int i=ca->first_idx;i<ca->end_idx;i++){
-        if(ca->clauses[i]){
-            printf("%d ", ca->clauses[i]);
-        }
-    } */
+
+#define LoopClauseArray(_ca,_c,_i)\
+    for(int _i=_ca->first_idx;_i<_ca->end_idx;_i++)\
+        if((_c = _ca->clauses[_i]))
+
 #endif

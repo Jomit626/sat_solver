@@ -30,7 +30,7 @@ void formula_print(Formula *fu);
 
 int formula_satisfy(Formula *fu, VariableAssignment* va);
 
-#define Loop_Clauses_in_Formula(_fu,_i) \
+#define LoopClausesInFormula(_fu,_i) \
     for(int _i=fu->first_cluase;i<fu->clause_end;i++)
 
 #define formula_get_clause(_fu,_cr) (_fu->cs[(_cr)])

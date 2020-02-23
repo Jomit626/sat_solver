@@ -23,7 +23,7 @@ Formula *new_formula(int type, int ln, int cn)
 void formula_print(Formula *fu)
 {
     printf("Formula:%p Type:%d Literal:%d Clause:%d start:%d end:%d\n", fu, fu->type, fu->variable_cnt, fu->clause_cnt,fu->first_cluase,fu->clause_end);
-    Loop_Clauses_in_Formula(fu, i)
+    LoopClausesInFormula(fu, i)
     {
         Clause *c = formula_get_clause(fu,i);
         printf("%d-",i);
@@ -115,7 +115,7 @@ Formula *new_formula_from_file(const char *filename)
 
 void formula_dump(Formula* fu,FILE *f){
     fprintf(f,"p cnf %d %d\n",fu->variable_cnt, fu->clause_cnt);
-    Loop_Clauses_in_Formula(fu,i)
+    LoopClausesInFormula(fu,i)
     {
         Clause*c = formula_get_clause(fu,i);
         for(int j=0;j<c->length;j++){
@@ -152,9 +152,9 @@ void formula_free(Formula *fu){
 int formula_satisfy(Formula *fu, VariableAssignment* va){
     fu = formula_copy(fu);
     int n = fu->clause_cnt;
-    Loop_Clauses_in_Formula(fu,i){
+    LoopClausesInFormula(fu,i){
         Clause *c = formula_get_clause(fu,i);
-        Loop_Literals_in_Clause(c,j){
+        LoopLiteralsInClause(c,j){
             Literal l = c->ls[j];
             Variable v = Lit_to_Var(l);
             if(va[v].l == l){

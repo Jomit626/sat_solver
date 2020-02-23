@@ -23,7 +23,7 @@ static formula_constructor* new_fuc(){
 
 static inline Formula* fuc_get_fu(formula_constructor *fuc,int lit_cnt){
     Formula *fu = fuc->fu;
-    fu->literal_cnt = lit_cnt;
+    fu->variable_cnt = lit_cnt;
     fu->clause_end = fuc->n;
     fu->clause_cnt = fuc->n;
     return fu;
